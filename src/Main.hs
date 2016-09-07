@@ -1,0 +1,3 @@
+import LStar
+
+main = undefined
