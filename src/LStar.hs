@@ -7,6 +7,8 @@ import Data.Map.Strict (Map, member, insert, empty)
 import qualified Data.Map.Strict as M
 import Control.Monad (foldM)
 import Data.Maybe (fromJust)
+import Data.Monoid ((<>))
+import Data.List (nub)
 
 ----------------------------------------------------------------------
 -- GENERAL TYPES
@@ -16,21 +18,48 @@ class (Eq a, Ord a) => Alphabet a where
   aToChar :: a -> Char
   aFromChar :: Char -> Maybe a
 
-type DFA a = (Map (Int, a) Int, [Int])
+data Str a = Str [a] | StrEmpty deriving (Eq, Ord, Show)
+
+instance Monoid (Str a) where
+  mappend (Str as) (Str bs) = Str (as ++ bs)
+  mappend s _ = s
+  mappend _ s = s
+  
+  mempty = StrEmpty
+
+fromStr :: Alphabet a => Str a -> String
+fromStr (Str as) = map aToChar as
+fromStr _ = ""
+
+toStr :: Alphabet a => String -> Maybe (Str a)
+toStr [] = return StrEmpty
+toStr ss = mapM aFromChar ss >>= (\as -> return (Str as))
+
+str :: a -> Str a
+str a = Str [a]
+
+app :: Str a -> a -> Str a
+app as b = as <> str b
+
+eps :: Str a
+eps = StrEmpty
+
+type Prefix a = Str a
+
+type Suffix a = Str a
+
+type DFA a = (Map ([Bool], a) [Bool], [[Bool]])
 
 ----------------------------------------------------------------------
 -- TEACHER
 
 class (Monad t, Alphabet a) => Teacher a t where
-  memberQ :: [a] -> t Bool
+  memberQ :: Str a -> t Bool
   conjectureQ :: DFA a -> t (Maybe (Prefix a))
 
 ----------------------------------------------------------------------
 -- LEARNER
 
-type Prefix a = [a]
-
-type Suffix a = [a]
 
 type OTable a = Map (Prefix a, Suffix a) Bool
 
@@ -38,13 +67,25 @@ class Alphabet a => Notes a n where
   getS :: n -> [Prefix a]
   getE :: n -> [Suffix a]
   getT :: n -> OTable a
+  
+getSw :: (Alphabet a, Notes a n) => [a] -> n -> [Prefix a]
+getSw _ n = getS n
+
+getEw :: (Alphabet a, Notes a n) => [a] -> n -> [Suffix a]
+getEw _ n = getE n
+
+getTw :: (Alphabet a, Notes a n) => [a] -> n -> OTable a
+getTw _ n = getT n
 
 data Unchecked a = Unchecked { getS' :: [Prefix a]
                              , getE' :: [Suffix a]
                              , getT' :: OTable a   }
 
-initialNotes :: Alphabet a => Unchecked a
-initialNotes = undefined
+initNotesW :: Alphabet a => a -> Unchecked a
+initNotesW _ = Unchecked [] [] empty
+
+initialNotes :: (Teacher a t) => a -> t (Unchecked a)
+initialNotes as = extend [eps] [eps] (initNotesW as)
 
 instance Alphabet a => Notes a (Unchecked a) where
   getS = getS'
@@ -70,12 +111,12 @@ addEntry :: Teacher a t => OTable a -> (Prefix a, Suffix a) -> t (OTable a)
 addEntry tbl (s,e) =
   if member (s,e) tbl -- is this already in our table?
      then return tbl -- then we already know this
-     else do r <- memberQ (s ++ e) -- then we need to ask the teacher
+     else do r <- memberQ (s <> e) -- then we need to ask the teacher
              return (insert (s,e) r tbl)
 
 -- S `dot` A
 sdota :: Alphabet a => [Prefix a] -> [Prefix a]
-sdota ss = [ s ++ [a] | s <- ss, a <- setA ]
+sdota ss = [ app s a | s <- ss, a <- setA ]
 
 newtype Consistent a = Consistent (Unchecked a)
 
@@ -110,14 +151,14 @@ consCEs n = let setS = getS n
                 row = tblRow (getT n) setE
                 sc s1 s2 = row s1 == row s2
                 ec s1 s2 a e =
-                  row (s1 ++ [a] ++ e)
-                  /= row (s2 ++ [a] ++ e)
-            in [ a:e | s1 <- setS
-                     , s2 <- setS
-                     , a <- setA
-                     , e <- setE
-                     , sc s1 s2
-                     , ec s1 s2 a e ]
+                  row (app s1 a <> e)
+                  /= row (app s2 a <> e)
+            in [ str a <> e | s1 <- setS
+                            , s2 <- setS
+                            , a <- setA
+                            , e <- setE
+                            , sc s1 s2
+                            , ec s1 s2 a e ]
 
 newtype Closed a = Closed (Unchecked a)
 
@@ -129,7 +170,27 @@ instance Alphabet a => Notes a (Closed a) where
 closed :: (Teacher a t, Notes a n)
        => n
        -> Either (t (Closed a)) (Closed a)
-closed = undefined
+closed n = case closCEs n  of
+             a:_ -> Left (mkClosed a n)
+             _ -> Right (proven Closed n)
+
+closCEs :: Notes a n => n -> [Prefix a]
+closCEs n = let setS = getS n
+                setE = getE n
+                row = tblRow (getT n) setE
+                rows = map row setS
+            in [ app s a | s <- setS
+                         , a <- setA
+                         , not (elem (row (app s a)) rows)]
+
+mkClosed :: (Teacher a t, Notes a n) 
+         => Prefix a
+         -> n
+         -> t (Closed a)
+mkClosed p n = do n2 <- extend [p] [] n
+                  case closed n of
+                    Left getC -> getC
+                    Right c -> return c
 
 newtype CAndC a = CAndC (Unchecked a)
 
@@ -140,20 +201,32 @@ instance Alphabet a => Notes a (CAndC a) where
 
 fromCons :: (Teacher a t)
          => Consistent a
-         -> Either (t (Consistent a)) (CAndC a)
-fromCons n = case consistent n of
+         -> Either (t (Closed a)) (CAndC a)
+fromCons n = case closed n of
                Right c -> Right (proven CAndC c)
                Left p -> Left p
 
 fromClos :: (Teacher a t)
          => Closed a
-         -> Either (t (Closed a)) (CAndC a)
-fromClos n = case closed n of
+         -> Either (t (Consistent a)) (CAndC a)
+fromClos n = case consistent n of
                Right c -> Right (proven CAndC c)
                Left p -> Left p
 
 conjecture :: Teacher a t => CAndC a -> t (Maybe (Prefix a))
 conjecture = undefined
 
-conjecture' :: Alphabet a => CAndC a -> DFA a
-conjecture' = undefined
+conjecture' :: Alphabet a => [a] -> CAndC a -> DFA a
+conjecture' as c = let setS = getSw as c
+                       setE = getEw as c
+                       tbl = getTw as c
+                       row = tblRow tbl setE
+                       setQ = nub [ row s | s <- setS ]
+                       qZ = row eps
+                       -- setF ?
+                   in (M.fromList (zip (zip (setQ) as) setQ), [[]])
+
+-- type DFA a = (Map ([Bool], a) [Bool], [[Bool]])
+
+elstar :: Teacher a t => [a] -> t (DFA a)
+elstar as = undefined
