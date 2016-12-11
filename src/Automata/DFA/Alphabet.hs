@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -6,8 +7,7 @@
 module Automata.DFA.Alphabet 
   ( AClass (..)
   , Alphabet (..)
-  
-  , AElem
+
   , AWord
   
   , AChar
@@ -22,13 +22,14 @@ import Data.Set (Set)
 
 -- | An alphabet 'a' with elements 'e'.  These elements must be
 -- convertible between 'Char' for practicality.
-class (Eq e, Ord e) => AClass a e | a -> e where
-  elements :: a -> Set e
-  elemToChar :: a -> e -> Char
-  charToElem :: a -> Char -> Maybe e
+class AClass a where
+  type AElem a
+  elements :: (Eq (AElem a), Ord (AElem a)) => a -> Set (AElem a)
+  elemToChar :: a -> AElem a -> Char
+  charToElem :: a -> Char -> Maybe (AElem a)
 
 -- | Convenience for getting the element type from an alphabet type
-type family AElem a
+-- type family AElem a
 
 -- | A word in the alphabet 'a'
 type AWord a = [AElem a]
@@ -37,9 +38,10 @@ type AWord a = [AElem a]
 -- runtime
 newtype Alphabet e = Alphabet (Set e, (e -> Char), (Char -> Maybe e))
 
-type instance AElem (Alphabet e) = e
+-- type instance AElem (Alphabet e) = e
 
-instance (Eq e, Ord e) => AClass (Alphabet e) e where
+instance (Eq e, Ord e) => AClass (Alphabet e) where
+  type AElem (Alphabet e) = e
   elements (Alphabet (es,_,_)) = es
   elemToChar (Alphabet (_,etc,_)) = etc
   charToElem (Alphabet (_,_,cte)) = cte
