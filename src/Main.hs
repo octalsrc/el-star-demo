@@ -1,3 +1,3 @@
-import LStar
+import Automata.LStar
 
 main = undefined

@@ -3,16 +3,18 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module LStar.Alphabet 
+module Automata.DFA.Alphabet 
   ( AClass (..)
   , Alphabet (..)
   
   , AElem
   , AWord
   
+  , AChar
   , Alphabet'
   , mkAlphabet
-  
+  , alphaToAWord
+
   ) where
 
 import qualified Data.Set as S
@@ -42,12 +44,19 @@ instance (Eq e, Ord e) => AClass (Alphabet e) e where
   elemToChar (Alphabet (_,etc,_)) = etc
   charToElem (Alphabet (_,_,cte)) = cte
 
+newtype AChar = AChar { fromAChar :: Char } deriving (Eq, Ord, Read, Show)
+
 -- | The most common 'Alphabet' type anyone will use
-type Alphabet' = Alphabet Char
+type Alphabet' = Alphabet AChar
+
+validate :: [Char] -> Char -> Maybe AChar
+validate cs c = if elem c cs
+                   then Just (AChar c)
+                   else Nothing
 
 -- | Produce an 'Alphabet\'' from a '[Char]'
-mkAlphabet :: [Char] -> Alphabet'
-mkAlphabet cs = Alphabet (S.fromList cs, id, return)
+mkAlphabet :: [Char] -> Alphabet AChar
+mkAlphabet cs = Alphabet (S.fromList (map AChar cs), fromAChar, validate cs)
 
 alphaToAWord :: [Char] -> AWord Alphabet'
 alphaToAWord = S.toList . elements . mkAlphabet
