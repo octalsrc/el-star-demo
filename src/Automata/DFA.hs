@@ -1,6 +1,14 @@
 {-# LANGUAGE FlexibleContexts #-}
 
-module Automata.DFA where
+module Automata.DFA 
+  ( DFA
+  , mkDFA
+  , mkDFA'
+  , exampleDFA
+
+  , module Automata.DFA.Alphabet
+  
+  ) where
 
 import Automata.DFA.Alphabet
 import Data.Graph.Inductive.Graph
@@ -17,12 +25,12 @@ mkDFA' a ss i es = fmap (\es' -> mkDFA a ss i es') (mapM (raiseEdge a) es)
 raiseEdge :: AClass a => a -> LEdge Char -> Maybe (LEdge (AElem a))
 raiseEdge a (s,s',c) = fmap (\e -> (s,s',e)) (charToElem a c)
 
-example :: Maybe (DFA Alphabet')
-example = let states = [(1,True)
-                       ,(2,False)]
-              edges = [(1,1,'a')
-                      ,(1,2,'b')
-                      ,(2,2,'a')
-                      ,(2,2,'b')]
-              alph = mkAlphabet "ab"
-          in mkDFA' alph states 1 edges
+exampleDFA :: Maybe (DFA Alphabet')
+exampleDFA = let states = [(1,True)
+                          ,(2,False)]
+                 edges = [(1,1,'a')
+                         ,(1,2,'b')
+                         ,(2,2,'a')
+                         ,(2,2,'b')]
+                 alph = exampleAlphabet
+             in mkDFA' alph states 1 edges

@@ -1,7 +1,4 @@
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Automata.DFA.Alphabet 
@@ -9,11 +6,14 @@ module Automata.DFA.Alphabet
   , Alphabet (..)
 
   , AWord
-  
+  , mkAWord
+
   , AChar
   , Alphabet'
   , mkAlphabet
   , alphaToAWord
+
+  , exampleAlphabet
 
   ) where
 
@@ -22,9 +22,9 @@ import Data.Set (Set)
 
 -- | An alphabet 'a' with elements 'e'.  These elements must be
 -- convertible between 'Char' for practicality.
-class AClass a where
+class (Eq (AElem a), Ord (AElem a)) => AClass a where
   type AElem a
-  elements :: (Eq (AElem a), Ord (AElem a)) => a -> Set (AElem a)
+  elements :: a -> Set (AElem a)
   elemToChar :: a -> AElem a -> Char
   charToElem :: a -> Char -> Maybe (AElem a)
 
@@ -33,6 +33,9 @@ class AClass a where
 
 -- | A word in the alphabet 'a'
 type AWord a = [AElem a]
+
+mkAWord :: AClass a => a -> [Char] -> Maybe (AWord a)
+mkAWord a cs = mapM (charToElem a) cs
 
 -- | A value-level 'AClass' instance, for defining alphabets at
 -- runtime
@@ -62,3 +65,6 @@ mkAlphabet cs = Alphabet (S.fromList (map AChar cs), fromAChar, validate cs)
 
 alphaToAWord :: [Char] -> AWord Alphabet'
 alphaToAWord = S.toList . elements . mkAlphabet
+
+exampleAlphabet :: Alphabet'
+exampleAlphabet = mkAlphabet "ab"

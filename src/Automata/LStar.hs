@@ -15,6 +15,21 @@ import Automata.DFA
 ----------------------------------------------------------------------
 -- TEACHER
 
+class (AClass a) => Teacher t a where
+  memberQ :: a -> AWord a -> t Bool
+  conjectureQ :: a -> DFA a -> t (Maybe (AWord a))
+
+newtype TestTeacher a = TestTeacher a deriving (Read, Show, Eq, Ord)
+
+instance Teacher TestTeacher Alphabet' where
+  memberQ a w = TestTeacher (if [] == w
+                                then True
+                                else False)
+  conjectureQ _ _ = TestTeacher Nothing
+  
+testResponse :: Maybe (TestTeacher Bool)
+testResponse = memberQ exampleAlphabet <$> (mkAWord exampleAlphabet "")
+
 -- class (Monad t, Alphabet a) => Teacher a t where
 --   memberQ :: Str a -> t Bool
 --   conjectureQ :: DFA a -> t (Maybe (Prefix a))
