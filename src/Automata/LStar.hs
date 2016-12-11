@@ -30,33 +30,38 @@ instance Teacher TestTeacher Alphabet' where
 testResponse :: Maybe (TestTeacher Bool)
 testResponse = memberQ exampleAlphabet <$> (mkAWord exampleAlphabet "")
 
--- class (Monad t, Alphabet a) => Teacher a t where
---   memberQ :: Str a -> t Bool
---   conjectureQ :: DFA a -> t (Maybe (Prefix a))
-
 ----------------------------------------------------------------------
 -- LEARNER
 
+type Prefix a = AWord a
+type Suffix a = AWord a
 
--- type OTable a = Map (Prefix a, Suffix a) Bool
+type OTable a = Map (Prefix a, Suffix a) Bool
 
--- class Alphabet a => Notes a n where
---   getS :: n -> [Prefix a]
---   getE :: n -> [Suffix a]
---   getT :: n -> OTable a
-  
--- getSw :: (Alphabet a, Notes a n) => [a] -> n -> [Prefix a]
--- getSw _ n = getS n
+class Notes n where
+  getS :: AClass a => n a -> [Prefix a]
+  getE :: AClass a => n a -> [Suffix a]
+  getT :: AClass a => n a -> OTable a
 
--- getEw :: (Alphabet a, Notes a n) => [a] -> n -> [Suffix a]
--- getEw _ n = getE n
+data Unchecked a = Unchecked { getS' :: [Prefix a]
+                             , getE' :: [Suffix a]
+                             , getT' :: OTable a }
 
--- getTw :: (Alphabet a, Notes a n) => [a] -> n -> OTable a
--- getTw _ n = getT n
+instance Notes Unchecked where
+  getS = getS'
+  getE = getE'
+  getT = getT'
 
--- data Unchecked a = Unchecked { getS' :: [Prefix a]
---                              , getE' :: [Suffix a]
---                              , getT' :: OTable a   }
+initNotes :: AClass a => Unchecked a
+initNotes = Unchecked [] [] empty
+
+extend :: (Teacher t a) => [Prefix a] -> [Suffix a] -> Unchecked a -> t (Unchecked a)
+extend ps ss (Unchecked s e t) = fill (s ++ ps) (e ++ ss) t
+
+fill :: (Teacher t a) => a -> [Prefix a] -> [Suffix a] -> OTable a -> t (Unchecked a)
+fill a ps ss t = let vs = mapM (\p -> memberQ a p) ps
+                     tbl = foldr insert t <$> vs
+                 in undefined
 
 -- initNotesW :: Alphabet a => a -> Unchecked a
 -- initNotesW _ = Unchecked [] [] empty
@@ -64,10 +69,6 @@ testResponse = memberQ exampleAlphabet <$> (mkAWord exampleAlphabet "")
 -- initialNotes :: (Teacher a t) => a -> t (Unchecked a)
 -- initialNotes as = extend [eps] [eps] (initNotesW as)
 
--- instance Alphabet a => Notes a (Unchecked a) where
---   getS = getS'
---   getE = getE'
---   getT = getT'
 
 -- rebase :: Notes a n => n -> Unchecked a
 -- rebase n = Unchecked (getS n) (getE n) (getT n)
