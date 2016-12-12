@@ -196,7 +196,22 @@ conjecture a n =
 
 processCE :: (Monad t, Teacher t a, Notes n) 
           => a -> n a -> AWord a -> t (Unchecked a)
-processCE = undefined
+processCE a n w = 
+  let (s,e,t) = (getS n, getE n, getT n)
+      lpf = listToMaybe 
+            . L.sortBy (\a b -> compare (length b) (length a))
+            . filter (L.isPrefixOf w)
+            $ allPs a s
+      sfs = fmap (suffixCl (not . (`elem` e))) (lpf >>= (flip L.stripPrefix) w)
+  in extendE a (fromJust sfs) n
+
+suffixCl :: ([a] -> Bool) -> [a] -> [[a]]
+suffixCl p as = 
+  let as' = reverse as
+  in filter p 
+     . map reverse 
+     . map ((flip take) as') 
+     $ [1 .. (length as')]
 
 -- extend :: (Teacher t a) => [Prefix a] -> [Suffix a] -> Unchecked a -> t (Unchecked a)
 -- extend ps ss (Unchecked s e t) = fill (s ++ ps) (e ++ ss) t
