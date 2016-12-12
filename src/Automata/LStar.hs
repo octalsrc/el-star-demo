@@ -122,8 +122,16 @@ extendS a ps n = let (s,e,t) = (getS n, getE n, getT n)
 findEntry :: (Monad t, Teacher t a) 
           => a -> OTable a -> (Prefix a, Suffix a) -> t (OTable a)
 findEntry a t w = case M.lookup w t of
-                    Nothing -> addEntry a w t
+                    Nothing -> case copyEntry a t w of
+                                 Just t' -> return t'
+                                 Nothing -> addEntry a w t
                     _ -> return t
+
+copyEntry :: AClass a 
+          => a -> OTable a -> (Prefix a, Suffix a) -> Maybe (OTable a)
+copyEntry a t (p,s) = 
+  fmap (\(_,v) -> M.insert (p,s) v t) 
+       (L.find (\((p',s'),v) -> p ++ s == p' ++ s') (M.toList t))
 
 extendE :: (Monad t, Teacher t a, Notes n) 
         => a -> [Suffix a] -> n a -> t (Unchecked a)
