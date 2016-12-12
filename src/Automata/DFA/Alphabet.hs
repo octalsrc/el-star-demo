@@ -15,6 +15,8 @@ module Automata.DFA.Alphabet
   , alphaToAWord
 
   , exampleAlphabet
+  , alphaAB
+  , alphaABC
 
   ) where
 
@@ -73,3 +75,9 @@ alphaToAWord = S.toList . elements . mkAlphabet
 
 exampleAlphabet :: Alphabet'
 exampleAlphabet = mkAlphabet "ab"
+
+alphaAB :: Alphabet'
+alphaAB = mkAlphabet "ab"
+
+alphaABC :: Alphabet'
+alphaABC = mkAlphabet "abc"

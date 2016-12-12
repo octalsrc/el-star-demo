@@ -26,7 +26,7 @@ type Suffix a = AWord a
 
 class (AClass a) => Teacher t a where
   memberQ :: a -> (Prefix a, Suffix a) -> t Bool
-  conjectureQ :: a -> DFA a -> t (Maybe (AWord a))
+  equivQ :: a -> DFA a -> t (Maybe (AWord a))
 
 newtype TestTeacher a = TestTeacher a deriving (Read, Show, Eq, Ord)
 
@@ -37,7 +37,7 @@ instance Teacher TestTeacher Alphabet' where
   memberQ a (p,s) = TestTeacher (if [] == (p ++ s)
                                     then True
                                     else False)
-  conjectureQ _ _ = TestTeacher Nothing
+  equivQ _ _ = TestTeacher Nothing
   
 testQ = case (mkAWord exampleAlphabet "", mkAWord exampleAlphabet "") of
           (Just pr, Just sf) -> Just (pr, sf)
@@ -63,13 +63,30 @@ instance Monad AskTeacher where
 
 instance Teacher AskTeacher Alphabet' where
   memberQ a (p,s) = AskTeacher (askWord a (p ++ s))
-  conjectureQ = undefined
+  equivQ a dfa = AskTeacher (askDFA a dfa)
+  
+askDFA a dfa = 
+  do putStrLn ("Is this DFA correct?")
+     print dfa
+     r <- getLine
+     case r of
+       "y" -> return Nothing
+       "n" -> do putStrLn ("Please provide a counterexample:")
+                 ce <- getLine
+                 return (mkAWord a ce)
+       _ -> putStrLn "I didn't understand that..."
+            >> askDFA a dfa
 
 askWord :: (AClass a) => a -> AWord a -> IO Bool
 askWord a w = do putStrLn ("Is the word \"" 
                            ++ (map (elemToChar a) w)
-                           ++ "\" in the language? ('True' or 'False')")
-                 read <$> getLine
+                           ++ "\" in the language? ('y' or 'n')")
+                 r <- getLine
+                 case r of
+                   "y" -> return True
+                   "n" -> return False
+                   _ -> putStrLn "I didn't understand that..."
+                        >> askWord a w
 
 askDebug :: (Show a) => AskTeacher (a) -> IO ()
 askDebug (AskTeacher ioa) = ioa >>= print
@@ -198,11 +215,17 @@ processCE :: (Monad t, Teacher t a, Notes n)
           => a -> n a -> AWord a -> t (Unchecked a)
 processCE a n w = 
   let (s,e,t) = (getS n, getE n, getT n)
-      lpf = listToMaybe 
+      orEmpty (Just s) = s
+      orEmpty Nothing = eps a
+
+      lpf = orEmpty
+            . listToMaybe 
             . L.sortBy (\a b -> compare (length b) (length a))
             . filter (L.isPrefixOf w)
             $ allPs a s
-      sfs = fmap (suffixCl (not . (`elem` e))) (lpf >>= (flip L.stripPrefix) w)
+      sfs = fmap (suffixCl (not . (`elem` e))) 
+            . ((flip L.stripPrefix) w)
+            $ lpf
   in extendE a (fromJust sfs) n
 
 suffixCl :: ([a] -> Bool) -> [a] -> [[a]]
@@ -212,6 +235,18 @@ suffixCl p as =
      . map reverse 
      . map ((flip take) as') 
      $ [1 .. (length as')]
+
+elstar :: (Monad t, Teacher t a) => a -> t (DFA a)
+elstar a = initNotes a >>= starLoop a
+
+starLoop :: (Monad t, Teacher t a) => a -> Unchecked a -> t (DFA a)
+starLoop a n = 
+  do cl <- makeClosed a n
+     let dfa = conjecture a cl
+     res <- equivQ a dfa
+     case res of
+       Just ce -> processCE a cl ce >>= starLoop a
+       Nothing -> return dfa
 
 -- extend :: (Teacher t a) => [Prefix a] -> [Suffix a] -> Unchecked a -> t (Unchecked a)
 -- extend ps ss (Unchecked s e t) = fill (s ++ ps) (e ++ ss) t
