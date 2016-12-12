@@ -97,11 +97,32 @@ askDebug (AskTeacher ioa) = ioa >>= print
 ----------------------------------------------------------------------
 -- LEARNER
 
-type LState t a = StateT (Pos a,[Pos a]) (ReaderT a t)
+type LState t a = StateT ((Pos a, String),[(Pos a, String)]) (ReaderT a t)
+
+getAlpha :: Monad t => LState t a a
+getAlpha = lift ask
+
+getNotes :: (Monad t, AClass a) 
+         => LState t a ([Prefix a], [Suffix a], OTable a)
+getNotes = do n <- fst.fst <$> get
+              return (getS n, getE n, getT n)
 
 data Pos a = PosUnf (Unfilled a)
            | PosUnc (Unchecked a)
            | PosClo (Closed a)
+
+instance Notes Pos where
+  getS (PosUnf n) = getS n
+  getS (PosUnc n) = getS n
+  getS (PosClo n) = getS n
+  
+  getE (PosUnf n) = getE n
+  getE (PosUnc n) = getE n
+  getE (PosClo n) = getE n
+
+  getT (PosUnf n) = getT n
+  getT (PosUnc n) = getT n
+  getT (PosClo n) = getT n
 
 type OTable a = Map (Prefix a, Suffix a) Bool
 
