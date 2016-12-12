@@ -7,6 +7,7 @@ module Automata.DFA.Alphabet
 
   , AWord
   , mkAWord
+  , eps
 
   , AChar
   , Alphabet'
@@ -36,6 +37,10 @@ type AWord a = [AElem a]
 
 mkAWord :: AClass a => a -> [Char] -> Maybe (AWord a)
 mkAWord a cs = mapM (charToElem a) cs
+
+-- | An empty word in alphabet 'a'
+eps :: AClass a => a -> AWord a
+eps _ = []
 
 -- | A value-level 'AClass' instance, for defining alphabets at
 -- runtime

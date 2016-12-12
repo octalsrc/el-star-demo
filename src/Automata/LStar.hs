@@ -1,9 +1,14 @@
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Automata.LStar where
 
+import Data.Maybe
 import Data.Map.Strict (Map, member, insert, empty)
+import qualified Data.Set as S
 import qualified Data.Map.Strict as M
 import Control.Monad (foldM)
 import Data.Maybe (fromJust)
@@ -15,26 +20,49 @@ import Automata.DFA
 ----------------------------------------------------------------------
 -- TEACHER
 
+type Prefix a = AWord a
+type Suffix a = AWord a
+
 class (AClass a) => Teacher t a where
-  memberQ :: a -> AWord a -> t Bool
+  memberQ :: a -> (Prefix a, Suffix a) -> t Bool
   conjectureQ :: a -> DFA a -> t (Maybe (AWord a))
 
 newtype TestTeacher a = TestTeacher a deriving (Read, Show, Eq, Ord)
 
+instance Functor TestTeacher where
+  fmap f (TestTeacher a) = TestTeacher (f a)
+
 instance Teacher TestTeacher Alphabet' where
-  memberQ a w = TestTeacher (if [] == w
-                                then True
-                                else False)
+  memberQ a (p,s) = TestTeacher (if [] == (p ++ s)
+                                    then True
+                                    else False)
   conjectureQ _ _ = TestTeacher Nothing
   
+testQ = case (mkAWord exampleAlphabet "", mkAWord exampleAlphabet "") of
+          (Just pr, Just sf) -> Just (pr, sf)
+          _ -> Nothing
+
 testResponse :: Maybe (TestTeacher Bool)
-testResponse = memberQ exampleAlphabet <$> (mkAWord exampleAlphabet "")
+testResponse = memberQ exampleAlphabet <$> testQ
+
+newtype AskTeacher a = AskTeacher (IO a)
+
+instance Functor AskTeacher where
+  fmap f (AskTeacher ioa) = AskTeacher (fmap f ioa)
+  
+instance Teacher AskTeacher Alphabet' where
+  memberQ a w = AskTeacher (askWord w)
+  conjectureQ = undefined
+
+askWord :: (Show a) => a -> IO Bool
+askWord w = do putStrLn $ "Is the word \"" ++ show w ++ "\" in the language? ('True' or 'False'"
+               read <$> getLine
+
+askDebug :: (Show a) => AskTeacher (a) -> IO ()
+askDebug (AskTeacher ioa) = ioa >>= print
 
 ----------------------------------------------------------------------
 -- LEARNER
-
-type Prefix a = AWord a
-type Suffix a = AWord a
 
 type OTable a = Map (Prefix a, Suffix a) Bool
 
@@ -46,22 +74,54 @@ class Notes n where
 data Unchecked a = Unchecked { getS' :: [Prefix a]
                              , getE' :: [Suffix a]
                              , getT' :: OTable a }
+                             
+deriving instance Show (AElem a) => Show (Unchecked a)
+
 
 instance Notes Unchecked where
   getS = getS'
   getE = getE'
   getT = getT'
 
-initNotes :: AClass a => Unchecked a
-initNotes = Unchecked [] [] empty
+addEntry :: (Functor t, Teacher t a) 
+         => a -> (Prefix a, Suffix a) -> OTable a -> t (OTable a)
+addEntry a (p,s) t = fmap (\v -> insert (p,s) v t) (memberQ a (p,s))
 
-extend :: (Teacher t a) => [Prefix a] -> [Suffix a] -> Unchecked a -> t (Unchecked a)
-extend ps ss (Unchecked s e t) = fill (s ++ ps) (e ++ ss) t
+addEntry' a t w = addEntry a w t
 
-fill :: (Teacher t a) => a -> [Prefix a] -> [Suffix a] -> OTable a -> t (Unchecked a)
-fill a ps ss t = let vs = mapM (\p -> memberQ a p) ps
-                     tbl = foldr insert t <$> vs
-                 in undefined
+initNotes :: (Functor t, Teacher t a) => a -> t (Unchecked a)
+initNotes a = Unchecked [eps a] [eps a] <$> addEntry a (eps a, eps a) empty
+
+extraPs :: AClass a => a -> [Prefix a] -> [Prefix a]
+extraPs a s = let as = S.toList $ elements a
+                  cross = [ pr ++ [e] | pr <- s, e <- as]
+              in filter (not . (flip elem) s) cross
+
+allPs :: AClass a => a -> [Prefix a] -> [Prefix a]
+allPs a s = s ++ extraPs a s
+
+extendS :: (Monad t, Teacher t a, Notes n) => a -> [Prefix a] -> n a -> t (Unchecked a)
+extendS a ps n = let (s,e,t) = (getS n, getE n, getT n)
+                     newS = s ++ ps
+                     newEntries = [ (pr,sf) | pr <- (allPs a newS), sf <- e]
+                     newTable = foldM (findEntry a) t newEntries
+                 in Unchecked newS e <$> newTable
+
+findEntry :: (Monad t, Teacher t a) => a -> OTable a -> (Prefix a, Suffix a) -> t (OTable a)
+findEntry a t w = case M.lookup w t of
+                    Nothing -> addEntry a w t
+                    _ -> return t
+
+extendE :: (Monad t, Teacher t a, Notes n) => a -> [Suffix a] -> n a -> t (Unchecked a)
+extendE = undefined
+
+-- extend :: (Teacher t a) => [Prefix a] -> [Suffix a] -> Unchecked a -> t (Unchecked a)
+-- extend ps ss (Unchecked s e t) = fill (s ++ ps) (e ++ ss) t
+
+-- fill :: (Teacher t a) => a -> [Prefix a] -> [Suffix a] -> OTable a -> t (Unchecked a)
+-- fill a ps ss t = let vs = mapM (\p -> memberQ a p) ps
+--                      tbl = foldr insert t <$> vs
+--                  in undefined
 
 -- initNotesW :: Alphabet a => a -> Unchecked a
 -- initNotesW _ = Unchecked [] [] empty
