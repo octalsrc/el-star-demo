@@ -7,6 +7,7 @@
 module Automata.LStar where
 
 import Data.Maybe
+import qualified Data.List as L
 import Data.Map.Strict (Map, member, insert, empty)
 import qualified Data.Set as S
 import qualified Data.Map.Strict as M
@@ -45,18 +46,30 @@ testQ = case (mkAWord exampleAlphabet "", mkAWord exampleAlphabet "") of
 testResponse :: Maybe (TestTeacher Bool)
 testResponse = memberQ exampleAlphabet <$> testQ
 
-newtype AskTeacher a = AskTeacher (IO a)
+newtype AskTeacher a = AskTeacher { fromAskTeacher :: IO a }
+
+-- TODO: try replacing these instances with generalized deriving
 
 instance Functor AskTeacher where
   fmap f (AskTeacher ioa) = AskTeacher (fmap f ioa)
-  
+
+instance Applicative AskTeacher where
+  pure a = AskTeacher (pure a)
+  (<*>) (AskTeacher iof) (AskTeacher a) = AskTeacher (iof <*> a)
+
+instance Monad AskTeacher where
+  return = pure
+  (>>=) (AskTeacher ioa) f = AskTeacher (ioa >>= (fromAskTeacher . f))
+
 instance Teacher AskTeacher Alphabet' where
-  memberQ a w = AskTeacher (askWord w)
+  memberQ a (p,s) = AskTeacher (askWord a (p ++ s))
   conjectureQ = undefined
 
-askWord :: (Show a) => a -> IO Bool
-askWord w = do putStrLn $ "Is the word \"" ++ show w ++ "\" in the language? ('True' or 'False'"
-               read <$> getLine
+askWord :: (AClass a) => a -> AWord a -> IO Bool
+askWord a w = do putStrLn ("Is the word \"" 
+                           ++ (map (elemToChar a) w)
+                           ++ "\" in the language? ('True' or 'False')")
+                 read <$> getLine
 
 askDebug :: (Show a) => AskTeacher (a) -> IO ()
 askDebug (AskTeacher ioa) = ioa >>= print
@@ -89,31 +102,93 @@ addEntry a (p,s) t = fmap (\v -> insert (p,s) v t) (memberQ a (p,s))
 
 addEntry' a t w = addEntry a w t
 
-initNotes :: (Functor t, Teacher t a) => a -> t (Unchecked a)
-initNotes a = Unchecked [eps a] [eps a] <$> addEntry a (eps a, eps a) empty
 
 extraPs :: AClass a => a -> [Prefix a] -> [Prefix a]
 extraPs a s = let as = S.toList $ elements a
-                  cross = [ pr ++ [e] | pr <- s, e <- as]
+                  cross = [pr ++ [e] | pr <- s, e <- as]
               in filter (not . (flip elem) s) cross
 
 allPs :: AClass a => a -> [Prefix a] -> [Prefix a]
 allPs a s = s ++ extraPs a s
 
-extendS :: (Monad t, Teacher t a, Notes n) => a -> [Prefix a] -> n a -> t (Unchecked a)
+extendS :: (Monad t, Teacher t a, Notes n) 
+        => a -> [Prefix a] -> n a -> t (Unchecked a)
 extendS a ps n = let (s,e,t) = (getS n, getE n, getT n)
                      newS = s ++ ps
-                     newEntries = [ (pr,sf) | pr <- (allPs a newS), sf <- e]
+                     newEntries = [(pr,sf) | pr <- (allPs a newS), sf <- e]
                      newTable = foldM (findEntry a) t newEntries
                  in Unchecked newS e <$> newTable
 
-findEntry :: (Monad t, Teacher t a) => a -> OTable a -> (Prefix a, Suffix a) -> t (OTable a)
+findEntry :: (Monad t, Teacher t a) 
+          => a -> OTable a -> (Prefix a, Suffix a) -> t (OTable a)
 findEntry a t w = case M.lookup w t of
                     Nothing -> addEntry a w t
                     _ -> return t
 
-extendE :: (Monad t, Teacher t a, Notes n) => a -> [Suffix a] -> n a -> t (Unchecked a)
-extendE = undefined
+extendE :: (Monad t, Teacher t a, Notes n) 
+        => a -> [Suffix a] -> n a -> t (Unchecked a)
+extendE a ss n = let (s,e,t) = (getS n, getE n, getT n)
+                     newE = e ++ ss
+                     newEntries = [(pr,sf) | pr <- (allPs a s), sf <- newE]
+                     newTable = foldM (findEntry a) t newEntries
+                 in Unchecked s newE <$> newTable
+
+-- TODO: combine extendE and extendS into one function
+
+initNotes :: (Monad t, Teacher t a) => a -> t (Unchecked a)
+initNotes a = 
+  return (Unchecked [] [] empty) 
+  >>= extendE a ([eps a] ++ (map (\e -> [e]) . S.toList . elements $ a))
+  >>= extendS a [eps a]
+
+newtype Closed n a = Closed (n a) deriving (Read, Show, Eq, Ord)
+
+instance (Notes n) => Notes (Closed n) where
+  getS (Closed n) = getS n
+  getE (Closed n) = getE n
+  getT (Closed n) = getT n
+
+checkClosed :: (AClass a, Notes n) => a -> n a -> Either (Prefix a) (Closed n a)
+checkClosed a n = let (s,e,t) = (getS n, getE n, getT n)
+                      getRow' = getRow a t e 
+                      srows = map getRow' s
+                      ps = filter (\p -> not (getRow' p `elem` srows))
+                                  (allPs a s)
+                  in case listToMaybe ps of
+                       Just p -> Left p
+                       Nothing -> Right (Closed n)
+
+getRow :: (AClass a) => a -> OTable a -> [Suffix a] -> Prefix a -> [Bool]
+getRow _ t ss p = map (\s -> t M.! (p,s)) ss
+
+makeClosed :: (Monad t, Teacher t a) 
+           => a -> Unchecked a -> t (Closed Unchecked a)
+makeClosed a n = 
+  case checkClosed a n of
+    Left p -> extendS a [p] n >>= makeClosed a
+    Right c -> return c
+
+conjecture :: (AClass a, Notes n) => a -> Closed n a -> DFA a
+conjecture a n = 
+  let (s,e,t) = (getS n, getE n, getT n)
+      getRow' = getRow a t e
+
+      states = zip (map getRow' s) [1..]
+      findState w = M.fromList states M.! getRow' w
+
+      revs = map (\p -> (getRow' p, p)) s
+      revPre w = M.fromList revs M.! w
+
+      istate = findState (eps a)
+      tr (rw,st) e = (st,(findState . (++ [e]) . revPre) rw,e)
+      rstates = map (\(rw,st) -> (st,t M.! (revPre rw,eps a))) 
+                    states
+      trans = [tr st e | st <- states, e <- (S.toList . elements) a]
+  in mkDFA a rstates istate trans
+
+processCE :: (Monad t, Teacher t a, Notes n) 
+          => a -> n a -> AWord a -> t (Unchecked a)
+processCE = undefined
 
 -- extend :: (Teacher t a) => [Prefix a] -> [Suffix a] -> Unchecked a -> t (Unchecked a)
 -- extend ps ss (Unchecked s e t) = fill (s ++ ps) (e ++ ss) t
