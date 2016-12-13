@@ -13,6 +13,7 @@ import qualified Data.Text as T
 import qualified Data.Map as M
 import Data.Monoid ((<>))
 import Data.Graph.Inductive.Graph
+import Data.Maybe (fromJust)
 
 import Reflex.Dom
 
@@ -24,12 +25,14 @@ type DFA' = DFA Alphabet'
 title :: MonadWidget t m => m ()
 title = el "h1" (text "The L* Algorithm")
 
+thisAlpha = alphaAB
+
 main :: IO ()
 main = mainWidget (do 
   title
   rec b <- yesOrNo t
       el "div" blank
-      t <- holdDyn (elstar alphaAB) b
+      t <- holdDyn (elstar thisAlpha) b
       el "div" blank
       dyn (fmap tableW t)
   blank)
@@ -44,14 +47,21 @@ yesOrNo t = do dynText (fmap (T.pack . funWord) t)
                el "div" blank
                cet <- textInput def
                ceb <- button "Counter-example"
-               let bools = leftmost [const True <$> y
-                                    ,const False <$> n]
+               let bools = leftmost [const (MResp True) <$> y
+                                    ,const (MResp False) <$> n
+                                    ,const (EResp Nothing) <$> ok
+                                    ,tag (fmap (EResp . Just . fElem thisAlpha . T.unpack) 
+                                          . current $ _textInput_value cet) ceb]
                return (attachWith (flip funMA) (current t) bools)
 
 data Resp = MResp Bool | EResp (Maybe (AWord Alphabet'))
 
-mqText "" = "Is the empty string in your language?"
-mqText w = "Is the word \"" ++ w ++ "\" in your language?"
+
+fElem :: Alphabet' -> String -> AWord Alphabet' 
+fElem a = map (fromJust . charToElem a)
+
+mqText "" = "Is the empty string in your language? (Use the 'Yes' and 'No' buttons)"
+mqText w = "Is the word \"" ++ w ++ "\" in your language? (Use the 'Yes' and 'No' buttons)"
 
 -- | A Teacher instance that represents an unanswered question as a
 --   function which takes the answer and produces the rest of the
@@ -72,10 +82,13 @@ type FunTeacher' = FunTeacher (DFA Alphabet')
 
 funWord :: FunTeacher a -> String
 funWord (FunM a _ p s _) = mqText (map (elemToChar a) (p++s))
-funWord _ = "equivalence"
+funWord (FunQ _ _ _ _) = "Does the following DFA match your language?  If not, provide\
+                         \ a counter-example string. (Use the 'Correct' and 'Counter-example' buttons"
+funWord (FunR _) = "Then we're all finished!"
 
-funMA b (FunM _ _ _ _ f) = f b
-funMA _ ft = ft
+funMA (MResp b) (FunM _ _ _ _ f) = f b
+funMA (EResp mce) (FunQ _ _ _ f) = f mce
+funMA _ t = t
 
 data Report = Report
 
