@@ -4,6 +4,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE RecursiveDo #-}
 
 module Main where
 
@@ -15,12 +16,30 @@ import Reflex.Dom
 import Automata.DFA
 import Automata.LStar
 
+type DFA' = DFA Alphabet'
+
 title :: MonadWidget t m => m ()
 title = el "h1" (text "The L* Algorithm")
 
 main :: IO ()
-main = funDebug (funMA True . funMA True $ (elstar alphaAB))
+main = mainWidget (do 
+  title
+  rec b <- yesOrNo t
+      t <- holdDyn (elstar alphaAB) b
+  blank)
 
+yesOrNo :: MonadWidget t m => Dynamic t FunTeacher' -> m (Event t FunTeacher')
+yesOrNo t = do dynText (fmap (T.pack . funWord) t)
+               y <- button "Yes"
+               n <- button "No"
+               let bools = leftmost [const True <$> y
+                                    ,const False <$> n]
+               return (attachWith (flip funMA) (current t) bools)
+
+-- | A Teacher instance that represents an unanswered question as a
+--   function which takes the answer and produces the rest of the
+--   questions (while also providing information that might be
+--   required to answer the questions)
 data FunTeacher l = FunM Alphabet' 
                          Report 
                          (Prefix Alphabet') 
@@ -31,6 +50,11 @@ data FunTeacher l = FunM Alphabet'
                          (DFA Alphabet') 
                          (Maybe (AWord Alphabet') -> FunTeacher l)
                   | FunR l
+
+type FunTeacher' = FunTeacher (DFA Alphabet')
+
+funWord :: FunTeacher a -> String
+funWord (FunM a _ p s _) = map (elemToChar a) (p++s)
 
 funMA b (FunM _ _ _ _ f) = f b
 
