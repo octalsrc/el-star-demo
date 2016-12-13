@@ -28,8 +28,11 @@ type Prefix a = AWord a
 type Suffix a = AWord a
 
 class (AClass a) => Teacher t a where
-  memberQ :: a -> (Prefix a, Suffix a) -> t Bool
+  memberQ' :: a -> ([Prefix a],[Suffix a],OTable a) -> (Prefix a, Suffix a) -> t Bool
   equivQ :: a -> DFA a -> t (Maybe (AWord a))
+
+memberQ :: Teacher t a => a -> (Prefix a, Suffix a) -> t Bool
+memberQ a q = memberQ' a ([],[],empty) q
 
 newtype TestTeacher a = TestTeacher a deriving (Read, Show, Eq, Ord)
 
@@ -37,9 +40,9 @@ instance Functor TestTeacher where
   fmap f (TestTeacher a) = TestTeacher (f a)
 
 instance Teacher TestTeacher Alphabet' where
-  memberQ a (p,s) = TestTeacher (if [] == (p ++ s)
-                                    then True
-                                    else False)
+  memberQ' a _ (p,s) = TestTeacher (if [] == (p ++ s)
+                                       then True
+                                       else False)
   equivQ _ _ = TestTeacher Nothing
   
 testQ = case (mkAWord exampleAlphabet "", mkAWord exampleAlphabet "") of
@@ -65,7 +68,7 @@ instance Monad AskTeacher where
   (>>=) (AskTeacher ioa) f = AskTeacher (ioa >>= (fromAskTeacher . f))
 
 instance Teacher AskTeacher Alphabet' where
-  memberQ a (p,s) = AskTeacher (askWord a (p ++ s))
+  memberQ' a _ (p,s) = AskTeacher (askWord a (p ++ s))
   equivQ a dfa = AskTeacher (askDFA a dfa)
   
 askDFA a dfa = 
@@ -169,11 +172,9 @@ instance Notes Closed where
   getE (Closed n) = getE n
   getT (Closed n) = getT n
 
-addEntry :: (Functor t, Teacher t a) 
-         => a -> (Prefix a, Suffix a) -> OTable a -> t (OTable a)
-addEntry a (p,s) t = fmap (\v -> insert (p,s) v t) (memberQ a (p,s))
-
-addEntry' a t w = addEntry a w t
+addEntry :: (Functor t, Teacher t a)
+         => a -> ([Prefix a],[Suffix a],OTable a) -> (Prefix a, Suffix a) -> OTable a -> t (OTable a)
+addEntry a r (p,s) t = fmap (\v -> insert (p,s) v t) (memberQ' a r (p,s))
 
 
 extraPs :: AClass a => a -> [Prefix a] -> [Prefix a]
@@ -189,16 +190,16 @@ extendS :: (Monad t, Teacher t a, Notes n)
 extendS a ps n = let (s,e,t) = (getS n, getE n, getT n)
                      newS = s ++ ps
                      newEntries = [(pr,sf) | pr <- (allPs a newS), sf <- e]
-                     newTable = foldM (findEntry a) t newEntries
+                     newTable = foldM (findEntry a (allPs a newS,e,t)) t newEntries
                  in Unchecked <$> Unfilled newS e <$> newTable
 
 findEntry :: (Monad t, Teacher t a) 
-          => a -> OTable a -> (Prefix a, Suffix a) -> t (OTable a)
-findEntry a t w = case M.lookup w t of
-                    Nothing -> case copyEntry a t w of
-                                 Just t' -> return t'
-                                 Nothing -> addEntry a w t
-                    _ -> return t
+          => a -> ([Prefix a],[Suffix a],OTable a) -> OTable a -> (Prefix a, Suffix a) -> t (OTable a)
+findEntry a r t w = case M.lookup w t of
+                      Nothing -> case copyEntry a t w of
+                                   Just t' -> return t'
+                                   Nothing -> addEntry a r w t
+                      _ -> return t
 
 copyEntry :: AClass a 
           => a -> OTable a -> (Prefix a, Suffix a) -> Maybe (OTable a)
@@ -211,7 +212,7 @@ extendE :: (Monad t, Teacher t a, Notes n)
 extendE a ss n = let (s,e,t) = (getS n, getE n, getT n)
                      newE = e ++ ss
                      newEntries = [(pr,sf) | pr <- (allPs a s), sf <- newE]
-                     newTable = foldM (findEntry a) t newEntries
+                     newTable = foldM (findEntry a (s,newE,t)) t newEntries
                  in Unchecked <$> Unfilled s newE <$> newTable
 
 -- TODO: combine extendE and extendS into one function
