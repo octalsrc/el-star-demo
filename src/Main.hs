@@ -12,6 +12,7 @@ import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Map as M
 import Data.Monoid ((<>))
+import Data.Graph.Inductive.Graph
 
 import Reflex.Dom
 
@@ -34,13 +35,20 @@ main = mainWidget (do
   blank)
 
 yesOrNo :: MonadWidget t m => Dynamic t FunTeacher' -> m (Event t FunTeacher')
-yesOrNo t = do dynText (fmap (T.pack . mqText . funWord) t)
+yesOrNo t = do dynText (fmap (T.pack . funWord) t)
                el "div" blank
                y <- button "Yes"
                n <- button "No"
+               el "div" blank
+               ok <- button "Correct"
+               el "div" blank
+               cet <- textInput def
+               ceb <- button "Counter-example"
                let bools = leftmost [const True <$> y
                                     ,const False <$> n]
                return (attachWith (flip funMA) (current t) bools)
+
+data Resp = MResp Bool | EResp (Maybe (AWord Alphabet'))
 
 mqText "" = "Is the empty string in your language?"
 mqText w = "Is the word \"" ++ w ++ "\" in your language?"
@@ -63,7 +71,7 @@ data FunTeacher l = FunM Alphabet'
 type FunTeacher' = FunTeacher (DFA Alphabet')
 
 funWord :: FunTeacher a -> String
-funWord (FunM a _ p s _) = map (elemToChar a) (p++s)
+funWord (FunM a _ p s _) = mqText (map (elemToChar a) (p++s))
 funWord _ = "equivalence"
 
 funMA b (FunM _ _ _ _ f) = f b
@@ -119,4 +127,7 @@ tableW (FunM a (s,e,t) pr sf _) = elAttr "table" bd (irow >> mapM_ rowW s)
                          else M.empty
         irow = el "td" blank >> mapM_ (\sf' -> el "td" (text (wsp' a sf'))) e
         bd = M.fromList [("style","border: 1px solid black; border-collapse: collapse;")]
-tableW _ = el "p" (text "equiv")
+tableW (FunQ a _ d _) = el "pre" (el "code" ((text . T.pack) (printDFA a d)))
+
+printDFA :: AClass a => a -> DFA a -> String
+printDFA a (i,gr) = "Initial state: " ++ show i ++ "\n\n" ++ prettify (emap (elemToChar a) gr)
