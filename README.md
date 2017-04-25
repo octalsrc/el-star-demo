@@ -1,6 +1,6 @@
 # An Interactive Implementation of the `L*` Algorithm #
 
-This README is the primary report and documentation for this project.
+The latest version of the demo is live [here](https://m.oct.moe/lstar).
 
 ## Building ##
 
