@@ -28,6 +28,11 @@ type Prefix a = AWord a
 type Suffix a = AWord a
 
 class (AClass a) => Teacher t a where
+  -- TODO: The prefixes passed here should only be the set S, so that
+  -- the teacher can do its own extending with elements of the
+  -- alphabet
+  -- 
+  -- (mainly so that the web app can distinguish S from S * A)
   memberQ' :: a -> ([Prefix a],[Suffix a],OTable a) -> (Prefix a, Suffix a) -> t Bool
   equivQ :: a -> DFA a -> t (Maybe (AWord a))
 
@@ -212,7 +217,7 @@ extendE :: (Monad t, Teacher t a, Notes n)
 extendE a ss n = let (s,e,t) = (getS n, getE n, getT n)
                      newE = e ++ ss
                      newEntries = [(pr,sf) | pr <- (allPs a s), sf <- newE]
-                     newTable = foldM (findEntry a (s,newE)) t newEntries
+                     newTable = foldM (findEntry a (allPs a s,newE)) t newEntries
                  in Unchecked <$> Unfilled s newE <$> newTable
 
 -- TODO: combine extendE and extendS into one function

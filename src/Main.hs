@@ -11,7 +11,8 @@ module Main where
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Map as M
-import Data.Monoid ((<>))
+import qualified Data.Set as S
+import Data.Monoid ((<>),mempty)
 import Data.Graph.Inductive.Graph
 import Data.Maybe (fromJust)
 
@@ -38,8 +39,7 @@ main = mainWidget (do
   blank)
 
 yesOrNo :: MonadWidget t m => Dynamic t FunTeacher' -> m (Event t FunTeacher')
-yesOrNo t = do dynText (fmap (T.pack . funWord) t)
-               el "div" blank
+yesOrNo t = do elAttr "div" cls (dynText (fmap (T.pack . funWord) t))
                y <- button "Yes"
                n <- button "No"
                el "div" blank
@@ -53,6 +53,7 @@ yesOrNo t = do dynText (fmap (T.pack . funWord) t)
                                     ,tag (fmap (EResp . Just . fElem thisAlpha . T.unpack) 
                                           . current $ _textInput_value cet) ceb]
                return (attachWith (flip funMA) (current t) bools)
+  where cls = M.fromList [("class","message")]
 
 data Resp = MResp Bool | EResp (Maybe (AWord Alphabet'))
 
@@ -128,8 +129,8 @@ wsp' :: AClass a => a -> AWord a -> Text
 wsp' a = T.pack . show . ws a
 
 tableW :: MonadWidget t m => FunTeacher' -> m ()
-tableW (FunM a (s,e,t) pr sf _) = elAttr "table" bd (irow >> mapM_ rowW s)
-  where rowW pr' = el "tr" (itd >> mapM_ (tdW pr') e)
+tableW (FunM a (s,e,t) pr sf _) = elAttr "table" bd (irow >> mapM_ (rowW False) s)
+  where rowW isMain pr' = elAttr "tr" (mainSt isMain) (itd >> mapM_ (tdW pr') e)
           where itd = elAttr "td" bd (text (wsp' a pr'))
         tdW pr' sf' = elAttr "td" (stW pr' sf' <> bd) (case M.lookup (pr',sf') t of
                                                          Just True -> text "Y"
@@ -139,8 +140,16 @@ tableW (FunM a (s,e,t) pr sf _) = elAttr "table" bd (irow >> mapM_ rowW s)
                          then M.fromList [("style","background-color: yellow;")]
                          else M.empty
         irow = el "td" blank >> mapM_ (\sf' -> el "td" (text (wsp' a sf'))) e
-        bd = M.fromList [("style","border: 1px solid black; border-collapse: collapse;")]
+        bd = M.fromList [("style","border: 1px solid; border-collapse: collapse;")]
+        allRows s = do main <- mapM_ (rowW True) s
+                       aux <- mapM_ (rowW False) (ext' s (elements a))
+                       return ()
 tableW (FunQ a _ d _) = el "pre" (el "code" ((text . T.pack) (printDFA a d)))
+
+ext' ls es = filter (\l -> not $ elem l ls) [ l ++ [e] | l <- ls, e <- (S.toList es)]
+mainSt b = if b
+              then M.fromList [("style","border: 3px solid red")]
+              else mempty
 
 printDFA :: AClass a => a -> DFA a -> String
 printDFA a (i,gr) = "Initial state: " ++ show i ++ "\n\n" ++ prettify (emap (elemToChar a) gr)
