@@ -190,16 +190,16 @@ extendS :: (Monad t, Teacher t a, Notes n)
 extendS a ps n = let (s,e,t) = (getS n, getE n, getT n)
                      newS = s ++ ps
                      newEntries = [(pr,sf) | pr <- (allPs a newS), sf <- e]
-                     newTable = foldM (findEntry a (allPs a newS,e,t)) t newEntries
+                     newTable = foldM (findEntry a (allPs a newS,e)) t newEntries
                  in Unchecked <$> Unfilled newS e <$> newTable
 
 findEntry :: (Monad t, Teacher t a) 
-          => a -> ([Prefix a],[Suffix a],OTable a) -> OTable a -> (Prefix a, Suffix a) -> t (OTable a)
-findEntry a r t w = case M.lookup w t of
-                      Nothing -> case copyEntry a t w of
-                                   Just t' -> return t'
-                                   Nothing -> addEntry a r w t
-                      _ -> return t
+          => a -> ([Prefix a],[Suffix a]) -> OTable a -> (Prefix a, Suffix a) -> t (OTable a)
+findEntry a (p,s) t w = case M.lookup w t of
+                          Nothing -> case copyEntry a t w of
+                                       Just t' -> return t'
+                                       Nothing -> addEntry a (p,s,t) w t
+                          _ -> return t
 
 copyEntry :: AClass a 
           => a -> OTable a -> (Prefix a, Suffix a) -> Maybe (OTable a)
@@ -212,7 +212,7 @@ extendE :: (Monad t, Teacher t a, Notes n)
 extendE a ss n = let (s,e,t) = (getS n, getE n, getT n)
                      newE = e ++ ss
                      newEntries = [(pr,sf) | pr <- (allPs a s), sf <- newE]
-                     newTable = foldM (findEntry a (s,newE,t)) t newEntries
+                     newTable = foldM (findEntry a (s,newE)) t newEntries
                  in Unchecked <$> Unfilled s newE <$> newTable
 
 -- TODO: combine extendE and extendS into one function
