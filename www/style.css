@@ -1,0 +1,22 @@
+.message {
+    font-size: 1.5em;
+    border: solid;
+    padding: .5em;
+    margin-bottom: .5em;
+}
+
+table {
+    margin-top: .5em;
+}
+
+td {
+    height: 2.5em;
+    width: 2.5em;
+    text-align: center;
+    font-size: 1.5em;
+    vertical-align: center;
+}
+
+pre {
+    font-size: 2em;
+}
